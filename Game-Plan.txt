@@ -6,7 +6,7 @@
 	1.c) Identify the initialization of function calls & their arguments.
 
 2) Identify conditions (if,else, etc).
-   2.b) Identify loops.
+   2.b) Identify loops. 
 
 3) Identify functions.
 
