@@ -1,15 +1,15 @@
 
-=================== Decompiler Game Plan ==========================================
+=========================== Decompiler Game Plan ==========================================
 
-1) Decompile basic instructions (add,mov, etc..)
-	1.b) Identify function prologue and epilogue (push ebp, mov ebp esp, etc..)
+1) Decompile basic instructions (add,mov, etc..).
+	1.b) Identify function prologue and epilogue (push ebp, mov ebp esp, etc..).
 	1.c) Identify the initialization of function calls & their arguments.
 
-2) Identify conditions (if,else, etc)
-   2.b) Identify loops
+2) Identify conditions (if,else, etc).
+   2.b) Identify loops.
 
-3) Identify functions
+3) Identify functions.
 
 4) Beautifying the decompiled C into a more understandable C code.
 
-===================================================================================
+===========================================================================================
