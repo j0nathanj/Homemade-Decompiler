@@ -49,7 +49,7 @@ class AsmElfFile(AsmFile):
 
     def get_func_address_size_and_content(self, func_name):
         func = self._file.functions[func_name]
-        return func.address, func.size
+        return func.address, func.size, self._file.disasm(func.address, func.size)
 
     def get_function(self, func_name):
         return AsmFunction(self, func_name)
@@ -88,6 +88,14 @@ class AsmFunction(object):
             except InvalidInstructionLineException as err:
                 print err
         return instructions
+    
+    def init_parameters(self):
+        """
+        Parse the function's arguments based on the function's content.
+        
+        :return: None
+        """
+        pass
 
 
 class AsmInstruction(object):
@@ -109,10 +117,19 @@ class AsmInstruction(object):
         address_str, self._command = temp_line.split(':')
         self._address = int('0x' + address_str, 16)
         self._command = self._command.strip()
-        if '# 0x' in line:  # In case of addresses in the binary file
+        if '# 0x' in line:	# In case of addresses in the binary file
             self._comment_address = int('0x' + line.split('# 0x')[-1], 16)
         else:
             self._comment_address = None
+
+        self._instruction = self._command.split(' ')[0].strip()
+        self._arguments = [arg.strip() for arg in self._command[7:] if arg.strip() != '']
+
+        
+
+    
+    def __str__(self):
+        return self._command
 
 
 class InvalidInstructionLineException(Exception):
@@ -128,14 +145,7 @@ class InvalidInstructionLineException(Exception):
 
 
 if __name__ == '__main__':
-    params = '''  400527:       48 89 e5                mov    rbp,rsp
-  40052a:       48 83 ec 10             sub    rsp,0x10
-  40052e:       c7 45 f4 05 00 00 00    mov    DWORD PTR [rbp-0xc],0x5
-  400535:       c7 45 f8 07 00 00 00    mov    DWORD PTR [rbp-0x8],0x7'''
-    for l in params.split('\n'):
-        try:
-            print l
-            ins = AsmInstruction(l)
-            print "Address: {} \n Command: {}".format(ins._address, ins._command)
-        except Exception as err:
-            print err
+    TestFile = AsmElfFile("../../local-Decompiler/tests/calling_convention_chk")
+    four_chars_int = AsmFunction(TestFile, "four_chars_int")
+    for inst in four_chars_int._instructions:
+        print inst
