@@ -3,17 +3,17 @@ import re
 
 REGISTER_LIST = []
 
-for reg in ['ax','bx','cx','dx','si','di','sp','bp']:
-    REGISTER_LIST.append('r'+reg) # 8 bytes
-    REGISTER_LIST.append('e'+reg) # 4 bytes
-    REGISTER_LIST.append(reg)     # 2 bytes
-    REGISTER_LIST.append(reg+'l' if 'x' not in reg else reg.replace('x','l')) # 1 byte
+for reg in ['ax', 'bx', 'cx', 'dx', 'si', 'di', 'sp', 'bp']:
+    REGISTER_LIST.append('r'+reg)  # 8 bytes
+    REGISTER_LIST.append('e'+reg)  # 4 bytes
+    REGISTER_LIST.append(reg)      # 2 bytes
+    REGISTER_LIST.append(reg+'l' if 'x' not in reg else reg.replace('x', 'l'))  # 1 byte
 
 for i in xrange(8, 16):
     REGISTER_LIST.append('r'+str(i))
-    REGISTER_LIST.append('r'+str(i)+'d') # DOUBLE WORD
-    REGISTER_LIST.append('r'+str(i)+'w') # WORD
-    REGISTER_LIST.append('r'+str(i)+'b') # BYTE
+    REGISTER_LIST.append('r'+str(i)+'d')  # DOUBLE WORD
+    REGISTER_LIST.append('r'+str(i)+'w')  # WORD
+    REGISTER_LIST.append('r'+str(i)+'b')  # BYTE
 
 
 class AsmFile(object):
@@ -62,10 +62,24 @@ class AsmElfFile(AsmFile):
         self._file = pwn.ELF(elf_filename)
 
     def get_func_address_size_and_content(self, func_name):
+        """
+        Get the function's address, size and instructions.
+        :param func_name: The function name.
+        :type func_name: str
+        :return: The function's address, size and instructions
+        :rtype: tuple(int, int, str)
+        """
         func = self._file.functions[func_name]
         return func.address, func.size, self._file.disasm(func.address, func.size)
 
     def get_function(self, func_name):
+        """
+        Get an AsmFunction of the function
+        :param func_name: The function name
+        :type func_name: str
+        :return: An AsmFunction representing the function
+        :rtype: AsmFunction
+        """
         return AsmFunction(self, func_name)
 
 
@@ -106,6 +120,13 @@ class AsmFunction(object):
         return instructions
     
     def update_state_dicts_by_inst(self, ind):
+        """
+        Process the instruction and update the state dicts according to it.
+
+        :param ind: The index of the instruction in the function's instructions list
+        :type ind: int
+        :return: None
+        """
         inst = self._instructions[ind]
         if inst._operator == 'mov':
             op1, op2 = inst._operands[0], inst._operands[1]
@@ -113,7 +134,6 @@ class AsmFunction(object):
             # > Finish handling the state dicts for `MOV` operator and add cases for other basic operators          #
             # > Checking CAPSTONE/KEYSTONE may be interesting for instruction parsing/handling.                     #
             # ======================================================================================================#
-
 
     def init_parameters(self):
         """
@@ -165,11 +185,21 @@ class AsmInstruction(object):
         return self._operator+' '+ ','.join(self._operands)
     
     def does_read_from_stack(self):
+        """
+        Check if the instruction reads from the stack.
+        :return: True if the instruction reads from the stack
+        :rtype: bool
+        """
         if len(self._operands) == 2 and '[' in self._operands[1] and ']' in self._operands[1]:
             return True
         return False
     
-    def does_read_args_from_mem(self):
+    def does_read_args_from_stack(self):
+        """
+        Check if the instruction reads a function argument (function parameter).
+        :return: True if the instruction reads a function argument
+        :rtype: bool
+        """
         if self.does_read_from_stack() and '[rbp+' in self._operands[1]:
             return True
         return False
