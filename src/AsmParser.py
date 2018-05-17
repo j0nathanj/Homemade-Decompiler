@@ -10,11 +10,14 @@ for reg in ['ax', 'bx', 'cx', 'dx', 'si', 'di', 'sp', 'bp']:
     REGISTER_LIST.append(reg+'l' if 'x' not in reg else reg.replace('x', 'l'))  # 1 byte
 
 for i in xrange(8, 16):
-    REGISTER_LIST.append('r'+str(i))
-    REGISTER_LIST.append('r'+str(i)+'d')  # DOUBLE WORD
-    REGISTER_LIST.append('r'+str(i)+'w')  # WORD
-    REGISTER_LIST.append('r'+str(i)+'b')  # BYTE
+    REGISTER_LIST.append('r'+str(i))      # QWORD ; 8 BYTES
+    REGISTER_LIST.append('r'+str(i)+'d')  # DWORD ; DOUBLE WORD; 4 BYTES
+    REGISTER_LIST.append('r'+str(i)+'w')  # WORD  ; 2 BYTES
+    REGISTER_LIST.append('r'+str(i)+'b')  # BYTE  ; BYTE
 
+
+def is_register(arg):
+    return arg in REGISTER_LIST
 
 class AsmFile(object):
     """
@@ -98,7 +101,10 @@ class AsmFunction(object):
         self._address, self._size, self._content = src_file.get_func_address_size_and_content(function_name)
         self._instructions = self.func_content_to_instruction_arr(self._content)
         self._reg_state_dict = {}
-        self._stack_frame = {}
+        self._stack_frame_state = {}
+    
+    def decompile(self):
+        self.init_parameters()
 
     @staticmethod
     def func_content_to_instruction_arr(func_content):
@@ -129,7 +135,16 @@ class AsmFunction(object):
         """
         inst = self._instructions[ind]
         if inst._operator == 'mov':
-            op1, op2 = inst._operands[0], inst._operands[1]
+            dst, src = inst._operands[0], inst._operands[1]
+            if is_register(src):
+                value = self._reg_state_dict[src] if src in self._reg_state_dict else src
+            else:
+                value = self._stack_frame_state[src] if src in self._stack_frame_state else src
+            if is_register(dst):
+                self._reg_state_dict[dst] = value
+            else:
+                self._stack_frame_state[dst] = value
+            
             # ======================================================================================================#
             # > Finish handling the state dicts for `MOV` operator and add cases for other basic operators          #
             # > Checking CAPSTONE/KEYSTONE may be interesting for instruction parsing/handling.                     #
@@ -151,10 +166,12 @@ class AsmFunction(object):
 
         for i in xrange(2, last_init_index+1):
             inst = self._instructions[i]
+            self.update_state_dicts_by_inst(i)
             # ==================================================================================================#
             # > Continue updating state dicts using a the function "update_state_dicts_by_inst".                #
             # > Analyze the function's arguments.                                                               #
             # ==================================================================================================#
+        print self._stack_frame_state
 
 
 class AsmInstruction(object):
@@ -190,9 +207,7 @@ class AsmInstruction(object):
         :return: True if the instruction reads from the stack
         :rtype: bool
         """
-        if len(self._operands) == 2 and '[' in self._operands[1] and ']' in self._operands[1]:
-            return True
-        return False
+        return len(self._operands) == 2 and '[' in self._operands[1] and ']' in self._operands[1]
     
     def does_read_args_from_stack(self):
         """
@@ -200,10 +215,7 @@ class AsmInstruction(object):
         :return: True if the instruction reads a function argument
         :rtype: bool
         """
-        if self.does_read_from_stack() and '[rbp+' in self._operands[1]:
-            return True
-        return False
-
+        return self.does_read_from_stack() and '[rbp+' in self._operands[1]
 
 class InvalidInstructionLineException(Exception):
     def __init__(self, instruction_line, reason=None):
@@ -220,6 +232,4 @@ class InvalidInstructionLineException(Exception):
 if __name__ == '__main__':
     TestFile = AsmElfFile("../../local-Decompiler/tests/calling_convention_chk")
     four_chars_int = AsmFunction(TestFile, "four_chars_int")
-    print REGISTER_LIST
-    for inst in four_chars_int._instructions:
-        print inst
+    four_chars_int.decompile()
