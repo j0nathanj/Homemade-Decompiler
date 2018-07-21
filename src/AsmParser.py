@@ -36,6 +36,26 @@ for i in xrange(0, 16):
 def is_register(arg):
     return arg in REGISTER_LIST
 
+def get_register(partial_reg):
+    if partial_reg in ['al','ax','eax','rax']:
+        return 'rax'
+    elif partial_reg in ['bl','bx','ebx','rbx']:
+        return 'rbx'
+    elif partial_reg in ['cl','cx','ecx','rcx']:
+        return 'rcx'
+    elif partial_reg in ['dl','dx','edx','rdx']:
+        return 'rdx'
+    elif partial_reg in ['sil','si','esi','rsi']:
+        return 'rsi'
+    elif partial_reg in ['dil','di','edi','rdi']:
+        return 'rdi'
+    
+    for i in xrange(8,16):
+        if partial_reg in ['r'+str(i)+'b', 'r'+str(i)+'w', 'r'+str(i)+'d', 'r'+str(i)]:
+            return 'r'+str(i)
+    
+    raise Exception('Invalid register %s\n' % partial_reg)
+
 class AsmFile(object):
     """
     Abstract class to describe an ASM file.
@@ -119,10 +139,13 @@ class AsmFunction(object):
         self._instructions = self.func_content_to_instruction_arr(self._content)
         self._reg_state_dict = {}
         self._stack_frame_state = {}
-        self._parameters = []  
+        self._parameters = []
+        self._c_code = []
+        self._curr_index = 0
     
     def decompile(self):
         self.init_parameters()
+        self.make_c_code()
     
     def __str__(self):
         result  = 'Function name: %s\n' % self._name
@@ -130,6 +153,8 @@ class AsmFunction(object):
         result += 'Function size: %d\n' % self._size
         result += 'Function parameters: %s\n' % ','.join(self._parameters)
         result += 'Content:\n%s' % self._content
+        result += '\n'+'-'*100+'\n'
+        result += 'Pseudo C Code:\n%s' % '\n'.join(self._c_code)
         return result
 
     @staticmethod
@@ -174,10 +199,15 @@ class AsmFunction(object):
             elif SZ == 'QWORD':
                 return 64
             else:
-                raise Exception('Invalid size in dst/src of an instruction, value: %s ' % value)
-
-
-    def update_state_dicts_by_inst(self, ind):
+                raise Exception('Invalid size in dst/src of an instruction, value: %s ' % value)	
+    
+    def make_c_code(self):	
+        while self._curr_index < len(self._instructions)-1:
+            self.update_state_dicts_by_inst(self._curr_index+1, True)
+            self._curr_index += 1
+            
+            
+    def update_state_dicts_by_inst(self, ind, make_c_code=False):
         """
         Process the instruction and update the state dicts according to it.
         
@@ -189,14 +219,19 @@ class AsmFunction(object):
         :return: None
         """
         inst = self._instructions[ind]
+        dst = None
+
+        if len(inst._operands) >=1 and ('rsp' == inst._operands[0] or 'rbp' == inst._operands[0]):
+            # Ignoring these
+            return
         if inst._operator.startswith('mov'):
             dst, src = inst._operands[0], inst._operands[1]
             if is_register(src):
-                value = self._reg_state_dict[src] if src in self._reg_state_dict else src
+                value = self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
             else:
                 value = self._stack_frame_state[src] if src in self._stack_frame_state else src
             if is_register(dst):
-                self._reg_state_dict[dst] = value
+                self._reg_state_dict[get_register(dst)] = value
             else:
                 self._stack_frame_state[dst] = value
         
@@ -204,12 +239,12 @@ class AsmFunction(object):
             dst, src = inst._operands[0], inst._operands[1]
 
             if is_register(src):
-                value =  self._reg_state_dict[src] if src in self._reg_state_dict else src
+                value =  self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
             else:
                 value =  self._stack_frame_state[src] if src in self._stack_frame_state else src
 
             if is_register(dst):
-                self._reg_state_dict[dst] += '+' + value
+                self._reg_state_dict[get_register(dst)] += '+' + value
             else:
                 self._stack_frame_state[dst] += '+' + value
 
@@ -217,12 +252,12 @@ class AsmFunction(object):
             dst, src = inst._operands[0], inst._operands[1]
 
             if is_register(src):
-                value =  self._reg_state_dict[src] if src in self._reg_state_dict else src
+                value =  self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
             else:
                 value =  self._stack_frame_state[src] if src in self._stack_frame_state else src
 
             if is_register(dst):
-                self._reg_state_dict[dst] += '-' + value
+                self._reg_state_dict[get_register(dst)] += '-' + value
             else:
                 self._stack_frame_state[dst] += '-' + value
         
@@ -232,20 +267,20 @@ class AsmFunction(object):
                 size = self.get_size(multiplier)
                 
                 if is_register(multiplier):
-                    multiplier_value = self._reg_state_dict[multiplier] if multiplier in self._reg_state_dict else multiplier
+                    multiplier_value = self._reg_state_dict[get_register(multiplier)] if get_register(multiplier) in self._reg_state_dict else get_register(multiplier)
                 else:
                     multiplier_value = self._stack_frame_state[multiplier] if multiplier in self._stack_frame_state else multiplier
 
                 if size == 8:
-                    self._reg_state_dict['ax'] = self._reg_state_dict['al'] + '*' + multiplier_value
+                    self._reg_state_dict[get_register('ax')] = self._reg_state_dict[get_register('al')] + '*' + multiplier_value
 
                 elif size == 16:
-                    self._reg_state_dict['dx'] = 'HIWORD('+self._reg_state_dict['ax'] + '*' + multiplier_value +')'
-                    self._reg_state_dict['ax'] = 'LOWORD('+self._reg_state_dict['ax'] + '*' + multiplier_value +')'
+                    self._reg_state_dict[get_register('dx')] = 'HIWORD('+self._reg_state_dict[get_register('ax')] + '*' + multiplier_value +')'
+                    self._reg_state_dict[get_register('ax')] = 'LOWORD('+self._reg_state_dict[get_register('ax')] + '*' + multiplier_value +')'
 
                 elif size == 32:
-                    self._reg_state_dict['edx'] = 'HIDWORD('+self._reg_state_dict['eax'] + '*' + multiplier_value +')'
-                    self._reg_state_dict['eax'] = 'LODWORD('+self._reg_state_dict['eax'] + '*' + multiplier_value +')'
+                    self._reg_state_dict[get_register('edx')] = 'HIDWORD('+self._reg_state_dict[get_register('eax')] + '*' + multiplier_value +')'
+                    self._reg_state_dict[get_register('eax')] = 'LODWORD('+self._reg_state_dict[get_register('eax')] + '*' + multiplier_value +')'
                 
                 elif size == 64:
                     self._reg_state_dict['rdx'] = 'HIQWORD('+self._reg_state_dict['rax'] + '*' + multiplier_value +')'
@@ -258,23 +293,29 @@ class AsmFunction(object):
                 assert size1 == size2
                 
                 if is_register(src):
-                    value =  self._reg_state_dict[src] if src in self._reg_state_dict else src
+                    value =  self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
                 else:
                     value =  self._stack_frame_state[src] if src in self._stack_frame_state else src
 
                 if is_register(dst):
-                    self._reg_state_dict[dst] += '*' + value
+                    self._reg_state_dict[get_register(dst)] += '*' + value
                 else:
                     self._stack_frame_state[dst] += '*' + value
 
-
-                
+        if dst is not None and not is_register(dst) and make_c_code:
+            self.write_c_inst(dst)
             
             # ======================================================================================================#
             # > Finish handling the state dicts for `MOV` operator and add cases for other basic operators          #
             # > Checking CAPSTONE/KEYSTONE may be interesting for instruction parsing/handling.                     #
             # ======================================================================================================#
-
+    
+    def write_c_inst(self,mem_var):
+        c_inst = mem_var +' = '+self._stack_frame_state[mem_var]+';'
+        self._c_code.append(c_inst)
+        self._stack_frame_state[mem_var] = mem_var
+    
+    
     def sorted_stack_frame(self):
         """
         Sort the stack frame to fit the way stack behaves.
@@ -325,6 +366,8 @@ class AsmFunction(object):
             # stack_element is in the stack frame && looks like: `DWORD PTR [rbp-0x24]`.
             # value is the value stored in that stack frame location
             self._parameters.append(stack_element.split(' ')[0])
+
+        self._curr_index = last_init_index
 
     
 
@@ -385,6 +428,7 @@ class InvalidInstructionLineException(Exception):
 
 if __name__ == '__main__':
     TestFile = AsmElfFile("../../local-Decompiler/tests/calling_convention_chk")
-    four_chars_int = AsmFunction(TestFile, "four_chars_int")
-    four_chars_int.decompile()
-    print str(four_chars_int)
+    func = AsmFunction(TestFile, "with_locals")
+    func.decompile()
+    print str(func)
+
