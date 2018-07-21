@@ -1,6 +1,16 @@
 import pwn
 import re
 
+'''
+[!] Weekly tasks (21.07.2018):
+    
+    [*] Shahaf - [1] Adding more assembly instruction handling. (shl, shr, div, idiv, xor, and, not, or, cvtsi2sd ... )
+                 [?] Keeping track of variable types.
+    
+    [*] Jonathan - [1] Detecting return value type && value (assuming the function's parsing is valid)
+    
+'''
+
 REGISTER_LIST = []
 REGISTERS_128 = []
 REGISTERS_64 = []
@@ -427,7 +437,7 @@ class InvalidInstructionLineException(Exception):
 
 
 if __name__ == '__main__':
-    TestFile = AsmElfFile("../../local-Decompiler/tests/calling_convention_chk")
+    TestFile = AsmElfFile("calling_convention_chk")
     func = AsmFunction(TestFile, "with_locals")
     func.decompile()
     print str(func)
