@@ -4,7 +4,7 @@ import re
 '''
 [!] Weekly tasks (21.07.2018):
     
-    [*] Shahaf - [1] Adding more assembly instruction handling. (shl, shr, div, idiv, xor, and, not, or, cvtsi2sd ... )
+    [*] Shahaf - [1] Adding more assembly instruction handling. (div, idiv, cvtsi2sd ... )
                  [?] Keeping track of variable types.
     
     [*] Jonathan - [1] Detecting return value type && value (assuming the function's parsing is valid)
@@ -65,6 +65,13 @@ def get_register(partial_reg):
             return 'r'+str(i)
     
     raise Exception('Invalid register %s\n' % partial_reg)
+
+def is_int(s):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
 
 class AsmFile(object):
     """
@@ -220,8 +227,8 @@ class AsmFunction(object):
     def update_state_dicts_by_inst(self, ind, make_c_code=False):
         """
         Process the instruction and update the state dicts according to it.
-        
-        NOTE: 
+
+        NOTE:
             - We haven't handled access to global variables / addresses.
 
         :param ind: The index of the instruction in the function's instructions list
@@ -231,11 +238,11 @@ class AsmFunction(object):
         inst = self._instructions[ind]
         dst = None
 
-        if len(inst._operands) >=1 and ('rsp' == inst._operands[0] or 'rbp' == inst._operands[0]):
+        if len(inst.operands) >=1 and ('rsp' == inst.operands[0] or 'rbp' == inst.operands[0]):
             # Ignoring these
             return
-        if inst._operator.startswith('mov'):
-            dst, src = inst._operands[0], inst._operands[1]
+        if inst.operator.startswith('mov'):
+            dst, src = inst.operands[0], inst.operands[1]
             if is_register(src):
                 value = self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
             else:
@@ -244,9 +251,9 @@ class AsmFunction(object):
                 self._reg_state_dict[get_register(dst)] = value
             else:
                 self._stack_frame_state[dst] = value
-        
-        elif inst._operator == 'add' or inst._operator == 'adc' or inst._operator == 'adox' or inst._operator == 'adcx':
-            dst, src = inst._operands[0], inst._operands[1]
+
+        elif inst.operator == 'add' or inst.operator == 'adc' or inst.operator == 'adox' or inst.operator == 'adcx':
+            dst, src = inst.operands[0], inst.operands[1]
 
             if is_register(src):
                 value =  self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
@@ -254,12 +261,12 @@ class AsmFunction(object):
                 value =  self._stack_frame_state[src] if src in self._stack_frame_state else src
 
             if is_register(dst):
-                self._reg_state_dict[get_register(dst)] += '+' + value
+                self._reg_state_dict[get_register(dst)] = '(' + self._reg_state_dict[get_register(dst)] + ')+' + value
             else:
-                self._stack_frame_state[dst] += '+' + value
+                self._stack_frame_state[dst] = '(' + self._stack_frame_state[dst] + ')+' + value
 
-        elif inst._operator == 'sub':
-            dst, src = inst._operands[0], inst._operands[1]
+        elif inst.operator == 'sub':
+            dst, src = inst.operands[0], inst.operands[1]
 
             if is_register(src):
                 value =  self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
@@ -267,15 +274,15 @@ class AsmFunction(object):
                 value =  self._stack_frame_state[src] if src in self._stack_frame_state else src
 
             if is_register(dst):
-                self._reg_state_dict[get_register(dst)] += '-' + value
+                self._reg_state_dict[get_register(dst)] = '(' + self._reg_state_dict[get_register(dst)] + ')-' + value
             else:
-                self._stack_frame_state[dst] += '-' + value
-        
-        elif inst._operator == 'mul' or inst._operator == 'imul':
-            if len(inst._operands) == 1:
-                multiplier = inst._operands[0]
+                self._stack_frame_state[dst] = '(' + self._stack_frame_state[dst] + ')-' + value
+
+        elif inst.operator == 'mul' or inst.operator == 'imul':
+            if len(inst.operands) == 1:
+                multiplier = inst.operands[0]
                 size = self.get_size(multiplier)
-                
+
                 if is_register(multiplier):
                     multiplier_value = self._reg_state_dict[get_register(multiplier)] if get_register(multiplier) in self._reg_state_dict else get_register(multiplier)
                 else:
@@ -291,26 +298,103 @@ class AsmFunction(object):
                 elif size == 32:
                     self._reg_state_dict[get_register('edx')] = 'HIDWORD('+self._reg_state_dict[get_register('eax')] + '*' + multiplier_value +')'
                     self._reg_state_dict[get_register('eax')] = 'LODWORD('+self._reg_state_dict[get_register('eax')] + '*' + multiplier_value +')'
-                
+
                 elif size == 64:
                     self._reg_state_dict['rdx'] = 'HIQWORD('+self._reg_state_dict['rax'] + '*' + multiplier_value +')'
                     self._reg_state_dict['rax'] = 'LOQWORD('+self._reg_state_dict['rax'] + '*' + multiplier_value +')'
 
-            elif len(inst._operands) == 2:
-                dst, src = inst._operands[0], inst._operands[1]
+            elif len(inst.operands) == 2:
+                dst, src = inst.operands[0], inst.operands[1]
                 size1 = self.get_size(dst)
                 size2 = self.get_size(src)
                 assert size1 == size2
-                
+
                 if is_register(src):
                     value =  self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
                 else:
                     value =  self._stack_frame_state[src] if src in self._stack_frame_state else src
 
                 if is_register(dst):
-                    self._reg_state_dict[get_register(dst)] += '*' + value
+                    self._reg_state_dict[get_register(dst)] = '(' + self._reg_state_dict[get_register(dst)] + ')*' + value
                 else:
-                    self._stack_frame_state[dst] += '*' + value
+                    self._stack_frame_state[dst] = '(' + self._stack_frame_state[dst] + ')*' + value
+        elif inst.operator == 'shl' or inst.operator == 'sal':
+            dst = inst.operands[0]
+            if len(inst.operands) == 1:
+                multiply_by = 2
+            else:
+                power_arg = inst.operands[1]
+                if is_int(power_arg):
+                    multiply_by = 2 ** int(power_arg)
+                elif is_register(power_arg):
+                    multiply_by = self._reg_state_dict[get_register(power_arg)] if get_register(power_arg) in self._reg_state_dict else get_register(power_arg)
+                else:
+                    multiply_by = self._stack_frame_state[power_arg] if power_arg in self._stack_frame_state else power_arg
+
+            if is_register(dst):
+                self._reg_state_dict[get_register(dst)] += '*' + multiply_by
+            else:
+                self._stack_frame_state[dst] += '*' + multiply_by
+        elif inst.operator == 'shr' or inst.operator == 'sar':
+            dst = inst.operands[0]
+            if len(inst.operands) == 1:
+                multiply_by = 2
+            else:
+                power_arg = inst.operands[1]
+                if is_int(power_arg):
+                    multiply_by = 2 ** int(power_arg)
+                elif is_register(power_arg):
+                    multiply_by = self._reg_state_dict[get_register(power_arg)] if get_register(power_arg) in self._reg_state_dict else get_register(power_arg)
+                else:
+                    multiply_by = self._stack_frame_state[power_arg] if power_arg in self._stack_frame_state else power_arg
+
+            if is_register(dst):
+                self._reg_state_dict[get_register(dst)] += '/' + multiply_by
+            else:
+                self._stack_frame_state[dst] += '/' + multiply_by
+        elif inst.operator == 'xor':
+            dst, src = inst.operands[0], inst.operands[1]
+
+            if is_register(src):
+                value = self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
+            else:
+                value = self._stack_frame_state[src] if src in self._stack_frame_state else src
+
+            if is_register(dst):
+                self._reg_state_dict[get_register(dst)] = '(' + self._reg_state_dict[get_register(dst)] + ')^' + value
+            else:
+                self._stack_frame_state[dst] = '(' + self._stack_frame_state[dst] + ')^' + value
+        elif inst.operator == 'and':
+            dst, src = inst.operands[0], inst.operands[1]
+
+            if is_register(src):
+                value = self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
+            else:
+                value = self._stack_frame_state[src] if src in self._stack_frame_state else src
+
+            if is_register(dst):
+                self._reg_state_dict[get_register(dst)] = '(' + self._reg_state_dict[get_register(dst)] + ')&' + value
+            else:
+                self._stack_frame_state[dst] = '(' + self._stack_frame_state[dst] + ')&' + value
+        elif inst.operator == 'or':
+            dst, src = inst.operands[0], inst.operands[1]
+
+            if is_register(src):
+                value = self._reg_state_dict[get_register(src)] if get_register(src) in self._reg_state_dict else get_register(src)
+            else:
+                value = self._stack_frame_state[src] if src in self._stack_frame_state else src
+
+            if is_register(dst):
+                self._reg_state_dict[get_register(dst)] = '(' + self._reg_state_dict[get_register(dst)] + ')|' + value
+            else:
+                self._stack_frame_state[dst] = '(' + self._stack_frame_state[dst] + ')|' + value
+        elif inst.operator == 'not':
+            dst = inst.operands[0]
+
+            if is_register(dst):
+                self._reg_state_dict[get_register(dst)] = '~(' + self._reg_state_dict[get_register(dst)] + ')'
+            else:
+                self._stack_frame_state[dst] = '~(' + self._stack_frame_state[dst] + ')'
 
         if dst is not None and not is_register(dst) and make_c_code:
             self.write_c_inst(dst)
@@ -324,8 +408,7 @@ class AsmFunction(object):
         c_inst = mem_var +' = '+self._stack_frame_state[mem_var]+';'
         self._c_code.append(c_inst)
         self._stack_frame_state[mem_var] = mem_var
-    
-    
+
     def sorted_stack_frame(self):
         """
         Sort the stack frame to fit the way stack behaves.
@@ -348,7 +431,6 @@ class AsmFunction(object):
         negative_idx.sort(key = lambda x : int(x.split('-')[-1][2:-1], 16), reverse = False)
 
         return positive_idx + negative_idx
-
 
     def init_parameters(self):
         """
@@ -379,7 +461,6 @@ class AsmFunction(object):
 
         self._curr_index = last_init_index
 
-    
 
 class AsmInstruction(object):
     def __init__(self, line):
@@ -396,9 +477,9 @@ class AsmInstruction(object):
             raise InvalidInstructionLineException(line, 'Invalid instruction pattern')
 
         temp_line = re.sub(command_pattern, '\\1:\\2:\\3:\\4', line)
-            
-        address_str, self._operator, self._operands, comment_address = temp_line.split(':')
-        self._operands = self._operands.strip().split(',') if self._operands.strip() != '' else []
+
+        address_str, self.operator, self.operands, comment_address = temp_line.split(':')
+        self.operands = self.operands.strip().split(',') if self.operands.strip() != '' else []
         self._address = int('0x' + address_str, 16)
         if comment_address != '':	# In case of addresses in the binary file
             self._comment_address = int(''.join(comment_address[2:]), 16)
@@ -406,7 +487,7 @@ class AsmInstruction(object):
             self._comment_address = None
     
     def __str__(self):
-        return self._operator+' '+ ','.join(self._operands)
+        return self.operator + ' ' + ','.join(self.operands)
     
     def does_read_from_stack(self):
         """
@@ -414,7 +495,7 @@ class AsmInstruction(object):
         :return: True if the instruction reads from the stack
         :rtype: bool
         """
-        return len(self._operands) == 2 and '[' in self._operands[1] and ']' in self._operands[1]
+        return len(self.operands) == 2 and '[' in self.operands[1] and ']' in self.operands[1]
     
     def does_read_args_from_stack(self):
         """
@@ -422,7 +503,7 @@ class AsmInstruction(object):
         :return: True if the instruction reads a function argument
         :rtype: bool
         """
-        return self.does_read_from_stack() and '[rbp+' in self._operands[1]
+        return self.does_read_from_stack() and '[rbp+' in self.operands[1]
 
 class InvalidInstructionLineException(Exception):
     def __init__(self, instruction_line, reason=None):
