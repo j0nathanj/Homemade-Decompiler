@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 float int_float(int a, float b){
 float c =b;
@@ -100,13 +102,17 @@ int mul_by_7(int x){
 	return result;
 }
 
+int shift_left(int x, int y){
+	return x << y;
+}
+
 int main(int argc, char** argv){
 	int i = 1;
 	float f = 2.2;
 	double d = 3.3;
 	char c1='a', c2='b', c3='c', c4='d';
 	int x = 100;
-
+	int y = 1337;
 	int_float(i,f);
 	int_double(i,d);
 	float_int(f,i);
@@ -116,6 +122,8 @@ int main(int argc, char** argv){
 	four_chars_int(c1,c2,c3,c4,i);
 	int_four_chars(i,c1,c2,c3,one_char(c4));
 	return_a_ptr(x);
-	return_buffer("hello");
+	char* check = return_buffer("hello");
+	printf("%s\n", check);
+	shift_left(x, y); 
 	return 1;
 }
