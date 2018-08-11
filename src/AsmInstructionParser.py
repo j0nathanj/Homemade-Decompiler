@@ -75,10 +75,10 @@ class AsmInstructionParser:
             self._asm_function.set_value('rax',
                                          'LOQWORD((' + multiplied_value + ')*(' + src_value + '))')
 
-    def _shl_inst(self, dst, src=1):
+    def _shl_inst(self, dst, src='1'):
         self._generic_instruction(dst, src, '<<')
 
-    def _shr_inst(self, dst, src=1):
+    def _shr_inst(self, dst, src='1'):
         self._generic_instruction(dst, src, '>>')
 
     def _xor_inst(self, dst, src):
