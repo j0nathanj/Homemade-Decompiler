@@ -407,11 +407,17 @@ class AsmFunction(object):
 		for i in xrange(2, last_init_index + 1):
 			self.update_state_dicts_by_inst(i)
 
+		param_idx = 0
 		for stack_element in self.sorted_stack_frame():
+			param_idx += 1
 			# stack_element is in the stack frame && looks like: `DWORD PTR [rbp-0x24]`.
 			# value is the value stored in that stack frame location
 			element_type = self.get_type(stack_element)
-			self._parameters.append(element_type)
+
+			param_name = "param{}".format(param_idx)
+			self._parameters.append((param_name, element_type))
+			self.set_value("stack_element", param_name)
+
 			self.set_type(stack_element, element_type)
 
 		self._curr_index = last_init_index
