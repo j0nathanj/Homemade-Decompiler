@@ -109,12 +109,14 @@ class AsmFunction(object):
 		self._c_code = []
 		self._curr_index = 0
 		self._return_type = ''
+		self._return_value = ''		
 		self._asm_instruction_parser = AsmInstructionParser.AsmInstructionParser(self)
 
 	def decompile(self):
 		self.init_parameters()
-		self.make_c_code()
 		self.calculate_return_type()
+		self.make_c_code()
+		self.calculate_return_value()
 
 	def __str__(self):
 		result = 'Function name: %s\n' % self._name
@@ -122,9 +124,11 @@ class AsmFunction(object):
 		result += 'Function size: %d\n' % self._size
 		result += 'Function parameters: %s\n' % ','.join(self._parameters)
 		result += 'Function return type: %s\n' % self._return_type
+		result += 'Return Value: %s\n' % self._return_value
 		result += 'Content:\n%s' % self._content
 		result += '\n' + '-' * 100 + '\n'
 		result += 'Pseudo C Code:\n%s' % '\n'.join(self._c_code)
+		result += '\nreturn '+self._return_value+';\n'
 		return result
 
 	@staticmethod
@@ -145,6 +149,24 @@ class AsmFunction(object):
 			except InvalidInstructionLineException as err:
 				print err
 		return instructions
+	
+	def calculate_return_value(self):
+		'''
+			Using the already-known return type, we calculate the return value!
+		'''
+		if self._return_type == '':
+			raise Exception('Error: return type not calculated yet!\n')
+		
+		return_value = None
+		mapping = {'DWORD' : 'eax', 'QWORD': 'rax', 'WORD': 'ax', 'BYTE': 'al' }
+		if self._return_type in ['float', 'double']: # Accessing xmm0 to get return value
+			return_value = self.get_value('xmm0')
+		else:
+			return_value = self.get_value(mapping[self._return_type])
+		
+		self._return_value = return_value
+		return return_value
+
 
 	def calculate_return_type(self):
 		"""
@@ -158,14 +180,48 @@ class AsmFunction(object):
 
 		"""
 		instructions = self._instructions[::-1]  # traverse from the end of the list.
+		
+		'''
+			1) If RAX was the last `mov` destination, returns the type given to RAX.
+			2) If xmm0 was last `mov` destination, it's either `float` or either `double`, depends if it was `sd` or `ss` operation.
 
+			So, first thing we do is to detect if the latest one was RAX or XMM0
+		'''
+
+		xmm0_or_rax_found = False # if we find RAX/XMM0, we set this flag!
 		for inst in instructions:
-			if len(inst.operands) > 1 and get_register(inst.operands[0]) == 'rax':
+			if len(inst.operands) > 1 and is_register(inst.operands[0]) and get_register(inst.operands[0]) == 'rax' and not xmm0_or_rax_found:
 				src = inst.operands[1]
 				return_type = self.get_english_size(
 					src if not is_register(src) else self._reg_state_dict[get_register(src)])
 				self._return_type = return_type
+				xmm0_or_rax_found = True
 				return return_type
+			
+			if len(inst.operands) > 1 and inst.operands[0] == 'xmm0' and not xmm0_or_rax_found:
+				return_type = self.precision_to_type(self.get_precision(inst))
+				self._return_type = return_type
+				return return_type
+
+
+	def get_precision(self, instruction):
+		operator = instruction.operator
+		if operator.endswith('sd'):
+			return 'double'
+		elif operator.endswith('ss'):
+			return 'single'
+		else:
+			raise Exception('Invalid instruction: Does not imply Float/Double : %s' % instruction)
+	
+	def precision_to_type(self, precision):
+		if precision == 'double':
+			return 'double'
+		
+		elif precision == 'single':
+			return 'float'
+
+		else:
+			raise Exception('Invalid precision: Does not imply Float/Double: %s' % precision)
 
 	def get_value(self, var):
 
@@ -419,6 +475,6 @@ class InvalidInstructionLineException(Exception):
 
 if __name__ == '__main__':
 	TestFile = AsmElfFile("calling_convention_chk")
-	func = AsmFunction(TestFile, "four_chars_int")
+	func = AsmFunction(TestFile, "int_float")
 	func.decompile()
 	print str(func)
