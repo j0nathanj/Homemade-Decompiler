@@ -5,13 +5,17 @@ import AsmInstructionParser
 from collections import namedtuple
 
 '''
-(18.8.2018) TODOs:
------------------------------------------------------------------
-* Shahaf- Parameters handling (type, stack-element mapping)
-* Jonathan- Return value & return type
------------------------------------------------------------------
-'''
+(5.9.2018) TODOs:
+---------------------------------------------------------------------
+* Shahaf   - Type tracking + Generalization of instructions.
+	      (- Optional: Naming variables)
 
+* Jonathan - Function invokes  
+
+# Both of us should think about how to make the code more suitable
+  for loops/if statements.
+---------------------------------------------------------------------
+'''
 
 def is_int(s):
 	try:
@@ -122,13 +126,15 @@ class AsmFunction(object):
 		result = 'Function name: %s\n' % self._name
 		result += 'Function address: %s\n' % hex(self._address)
 		result += 'Function size: %d\n' % self._size
-		result += 'Function parameters: %s\n' % ','.join(self._parameters)
+		result += 'Function parameters: %s\n' % ','.join([a[1] +' '+a[0] for a in self._parameters])
 		result += 'Function return type: %s\n' % self._return_type
 		result += 'Return Value: %s\n' % self._return_value
 		result += 'Content:\n%s' % self._content
 		result += '\n' + '-' * 100 + '\n'
 		result += 'Pseudo C Code:\n%s' % '\n'.join(self._c_code)
 		result += '\nreturn '+self._return_value+';\n'
+		print self._stack_frame_state
+		print self._reg_state_dict
 		return result
 
 	@staticmethod
@@ -416,7 +422,7 @@ class AsmFunction(object):
 
 			param_name = "param{}".format(param_idx)
 			self._parameters.append((param_name, element_type))
-			self.set_value("stack_element", param_name)
+			self.set_value(stack_element, param_name)
 
 			self.set_type(stack_element, element_type)
 

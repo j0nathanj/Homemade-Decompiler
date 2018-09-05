@@ -82,7 +82,10 @@ class AsmInstructionParser:
 		self._generic_instruction(dst, src, '>>')
 
 	def _xor_inst(self, dst, src):
-		self._generic_instruction(dst, src, '^')
+		if dst != src:
+			self._generic_instruction(dst, src, '^')
+		else:
+			self._asm_function.set_value(dst, '0')
 
 	def _and_inst(self, dst, src):
 		self._generic_instruction(dst, src, '&')
@@ -108,11 +111,11 @@ class AsmInstructionParser:
 			# Ignoring these
 			return
 
-		if inst.operator.startswith('mov'):
+		if inst.operator.startswith('mov') or inst.operator.startswith('cvt'):
 			dst, src = inst.operands[0], inst.operands[1]
 			self._mov_inst(dst, src)
 
-		elif inst.operator == 'add' or inst.operator == 'adc' or inst.operator == 'adox' or inst.operator == 'adcx':
+		elif inst.operator == 'add' or inst.operator == 'adc' or inst.operator == 'adox' or inst.operator == 'adcx' or inst.operator == 'addss':
 			dst, src = inst.operands[0], inst.operands[1]
 			self._add_inst(dst, src)
 
@@ -142,7 +145,7 @@ class AsmInstructionParser:
 				src = inst.operands[1]
 			self._shr_inst(dst, src)
 
-		elif inst.operator == 'xor':
+		elif 'xor' in inst.operator:
 			dst, src = inst.operands[0], inst.operands[1]
 			self._xor_inst(dst, src)
 
