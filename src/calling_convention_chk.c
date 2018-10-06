@@ -106,6 +106,14 @@ int shift_left(int x, int y){
 	return x << y;
 }
 
+int loop_test(){
+	int i;
+	for( i =0; i < 10; i++){
+		printf("%d\n", i);
+	}
+	return i;
+}
+
 int main(int argc, char** argv){
 	int i = 1;
 	float f = 2.2;
@@ -125,5 +133,6 @@ int main(int argc, char** argv){
 	char* check = return_buffer("hello");
 	printf("%s\n", check);
 	shift_left(x, y); 
+	int result = loop_test();
 	return 1;
 }

@@ -5,15 +5,15 @@ import AsmInstructionParser
 from collections import namedtuple
 
 '''
-(5.9.2018) TODOs:
+(10.6.2018) TODOs:
 ---------------------------------------------------------------------
-* Shahaf   - Type tracking + Generalization of instructions.
-	      (- Optional: Naming variables)
 
-* Jonathan - Function invokes  
+* Add linking of basic blocks (loops/if conditions).
 
-# Both of us should think about how to make the code more suitable
-  for loops/if statements.
+* Adding names to local variables
+
+~ For later: "return" basic block
+
 ---------------------------------------------------------------------
 '''
 
@@ -25,6 +25,50 @@ def is_int(s):
 		return False
 
 StackEntry = namedtuple('StackEntry', ['value', 'type'])
+
+
+class BasicBlock(object):
+	"""
+		Represents a basic block.
+	"""
+
+	def __init__(self, start_addr, end_addr, asm_instructions, asm_function):
+		self.start_addr = start_addr
+		self.end_addr = end_addr
+		self.asm_instructions = asm_instructions
+		self.c_code = []
+		self.asm_function = asm_function
+	
+	def decompile_block(self):
+		curr_index = 0
+		while curr_index < len(self.asm_instructions):
+			self.update_state_dicts_by_inst(curr_index, True)
+			curr_index += 1
+
+	def update_state_dicts_by_inst(self, ind, make_c_code=False):
+		"""
+		Process the instruction and update the state dicts according to it.
+
+		NOTE:
+			- We haven't handled access to global variables / addresses.
+
+		:param ind: The index of the instruction in the function's instructions list
+		:param make_c_code: A flag indicating whether the asm instruction should also be translated to a C instruction
+			(if possible)
+		:type ind: int
+		:type make_c_code: bool
+		:return: None
+		"""
+		inst = self.asm_instructions[ind]
+		dst = self.asm_function._asm_instruction_parser.handle_instruction(inst)
+
+		if dst is not None and not is_register(dst) and make_c_code:
+			self.write_c_inst(dst)
+
+	def write_c_inst(self, mem_var):
+		c_inst = mem_var + ' = ' + self.asm_function.get_value(mem_var) + ';'
+		self.c_code.append(c_inst)
+		self.asm_function.set_value(mem_var, mem_var)
 
 class AsmFile(object):
 	"""
@@ -119,8 +163,10 @@ class AsmFunction(object):
 	def decompile(self):
 		self.init_parameters()
 		self.calculate_return_type()
-		self.make_c_code()
+		self.split_to_basic_blocks()
+		self.decompile_basic_blocks()
 		self.calculate_return_value()
+		self.rename_local_variables() # change names of local variables
 
 	def __str__(self):
 		result = 'Function name: %s\n' % self._name
@@ -131,7 +177,11 @@ class AsmFunction(object):
 		result += 'Return Value: %s\n' % self._return_value
 		result += 'Content:\n%s' % self._content
 		result += '\n' + '-' * 100 + '\n'
-		result += 'Pseudo C Code:\n%s' % '\n'.join(self._c_code)
+		result += 'Pseudo C Code:\n'
+		
+		for basic_block in self._basic_blocks:
+			result += '\n'.join(basic_block.c_code)
+		
 		result += '\nreturn '+self._return_value+';\n'
 		print self._stack_frame_state
 		print self._reg_state_dict
@@ -155,6 +205,57 @@ class AsmFunction(object):
 			except InvalidInstructionLineException as err:
 				print err
 		return instructions
+	
+	def rename_local_variables(self):
+		'''
+			Rename local variables (from "DWORD ptr ..." to something more human-readable.
+		'''
+		pass
+
+	def split_to_basic_blocks(self):
+		basic_blocks_beginnings = set([self._instructions[self._curr_index+1]._address]) # start addresses of the basic blocks
+		basic_blocks_endings = set()
+		basic_blocks_instructions = [] # list of tupples, each tuple is: (start_addr, LIST_OF_INSTRUCTIONS)
+		jmp_options = ['jne', 'je', 'jbe', 'jle', 'jae', 'jge', 'jmp', 'jnz', 'jns', 'jz', 'js', 'jnbe', 'ja', 'jg', 'jb', 'jl', 'jnge', 'jnle', 'jnl']
+		basic_block_curr = (self._instructions[self._curr_index+1]._address, [])
+
+		while self._curr_index < len(self._instructions) - 1:
+			
+			if self._instructions[self._curr_index + 1]._address in basic_blocks_beginnings and len(basic_blocks_beginnings) != 1:
+				basic_blocks_instructions.append(basic_block_curr)
+				basic_block_curr = (self._instructions[self._curr_index + 1]._address, [])
+				basic_blocks_endings.add(self._instructions[self._curr_index]._address)
+
+			basic_block_addr, basic_block_curr_list = basic_block_curr
+			basic_block_curr_list.append(self._instructions[self._curr_index+1])
+			basic_block_curr = (basic_block_addr, basic_block_curr_list)	
+			
+			if self._instructions[self._curr_index + 1].operator in jmp_options:
+				basic_blocks_instructions.append(basic_block_curr)
+				basic_block_curr = (self._instructions[self._curr_index + 2]._address, [])
+				basic_blocks_beginnings.add(self._instructions[self._curr_index + 2]._address)
+				basic_blocks_beginnings.add(int('0x'+self._instructions[self._curr_index + 1]._operands[0], 16))
+				basic_blocks_endings.add(self._instructions[self._curr_index + 1]._address)
+			
+			
+			self._curr_index += 1
+		
+		basic_blocks_endings.add(self._instructions[self._curr_index]._address)
+		basic_blocks_instructions.append(basic_block_curr)
+
+		basic_blocks_beginnings = sorted(basic_blocks_beginnings, key=int)
+		basic_blocks_endings = sorted(basic_blocks_endings, key=int)
+		basic_blocks_instructions = sorted(basic_blocks_instructions, key = lambda x : x[0])
+		self._basic_blocks = []
+		
+		# BasicBlock(self, start_addr, end_addr, asm_instructions, asm_function)
+		for ind in xrange(len(basic_blocks_beginnings)):
+			basic_block = BasicBlock(basic_blocks_beginnings[ind], basic_blocks_endings[ind], basic_blocks_instructions[ind][1], self)
+			self._basic_blocks.append(basic_block)
+	
+	def decompile_basic_blocks(self):
+		for basic_block in self._basic_blocks:
+			basic_block.decompile_block()
 	
 	def calculate_return_value(self):
 		'''
@@ -487,6 +588,6 @@ class InvalidInstructionLineException(Exception):
 
 if __name__ == '__main__':
 	TestFile = AsmElfFile("calling_convention_chk")
-	func = AsmFunction(TestFile, "int_float")
+	func = AsmFunction(TestFile, "int_four_chars")
 	func.decompile()
 	print str(func)
