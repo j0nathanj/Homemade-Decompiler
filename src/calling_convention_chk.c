@@ -114,6 +114,17 @@ int loop_test(){
 	return i;
 }
 
+int double_loop(){
+	int i = 0;
+	int j = 0;
+	for(i = 0 ; i < 10; i++){
+		for(j = i; j < 20; j++){
+			printf("(%d, %d)\n", i, j);
+		}
+	}
+	return i+j;
+}
+
 int main(int argc, char** argv){
 	int i = 1;
 	float f = 2.2;
@@ -134,5 +145,6 @@ int main(int argc, char** argv){
 	printf("%s\n", check);
 	shift_left(x, y); 
 	int result = loop_test();
+	int result2 = double_loop();
 	return 1;
 }

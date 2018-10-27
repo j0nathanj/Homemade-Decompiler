@@ -5,16 +5,20 @@ import AsmInstructionParser
 from collections import namedtuple
 
 '''
-(10.6.2018) TODOs:
----------------------------------------------------------------------
-
-* Add linking of basic blocks (loops/if conditions).
+(27.10.2018) TODOs:
+----------------------------------------------------------------------------------
 
 * Adding names to local variables
 
-~ For later: "return" basic block
+* To Implement:
+	- AsmFunction.find_block_by_index
+	- AsmFunction.find_block_by_address
+	- AsmFunction.create_c_code    	   (Recursive function to traverse all blocks)
 
----------------------------------------------------------------------
+* Handle function calls from within AsmFunctions
+
+~ For later: "return" basic block
+----------------------------------------------------------------------------------
 '''
 
 def is_int(s):
@@ -165,6 +169,7 @@ class AsmFunction(object):
 		self.calculate_return_type()
 		self.split_to_basic_blocks()
 		self.decompile_basic_blocks()
+		self.connect_basic_blocks()
 		self.calculate_return_value()
 		self.rename_local_variables() # change names of local variables
 
@@ -198,9 +203,9 @@ class AsmFunction(object):
 		:rtype: list[AsmInstruction]
 		"""
 		instructions = []
-		for line in func_content.split('\n'):
+		for index, line in enumerate(func_content.split('\n')):
 			try:
-				inst = AsmInstruction(line)
+				inst = AsmInstruction(line, index)
 				instructions.append(inst)
 			except InvalidInstructionLineException as err:
 				print err
@@ -213,36 +218,34 @@ class AsmFunction(object):
 		pass
 
 	def split_to_basic_blocks(self):
-		basic_blocks_beginnings = set([self._instructions[self._curr_index+1]._address]) # start addresses of the basic blocks
+		basic_blocks_beginnings = set([self._instructions[self._curr_index]._address]) # start addresses of the basic blocks
 		basic_blocks_endings = set()
 		basic_blocks_instructions = [] # list of tupples, each tuple is: (start_addr, LIST_OF_INSTRUCTIONS)
 		jmp_options = ['jne', 'je', 'jbe', 'jle', 'jae', 'jge', 'jmp', 'jnz', 'jns', 'jz', 'js', 'jnbe', 'ja', 'jg', 'jb', 'jl', 'jnge', 'jnle', 'jnl']
-		basic_block_curr = (self._instructions[self._curr_index+1]._address, [])
+		basic_block_curr = (self._instructions[self._curr_index]._address, [])
 
-		while self._curr_index < len(self._instructions) - 1:
+		while self._curr_index < len(self._instructions):
 			
-			if self._instructions[self._curr_index + 1]._address in basic_blocks_beginnings and len(basic_blocks_beginnings) != 1:
+			if self._instructions[self._curr_index]._address in basic_blocks_beginnings and len(basic_blocks_beginnings) != 1:
 				basic_blocks_instructions.append(basic_block_curr)
-				basic_block_curr = (self._instructions[self._curr_index + 1]._address, [])
+				basic_block_curr = (self._instructions[self._curr_index]._address , [])
 				basic_blocks_endings.add(self._instructions[self._curr_index]._address)
 
 			basic_block_addr, basic_block_curr_list = basic_block_curr
-			basic_block_curr_list.append(self._instructions[self._curr_index+1])
+			basic_block_curr_list.append(self._instructions[self._curr_index])
 			basic_block_curr = (basic_block_addr, basic_block_curr_list)	
 			
-			if self._instructions[self._curr_index + 1].operator in jmp_options:
-				basic_blocks_instructions.append(basic_block_curr)
-				basic_block_curr = (self._instructions[self._curr_index + 2]._address, [])
-				basic_blocks_beginnings.add(self._instructions[self._curr_index + 2]._address)
-				basic_blocks_beginnings.add(int('0x'+self._instructions[self._curr_index + 1]._operands[0], 16))
-				basic_blocks_endings.add(self._instructions[self._curr_index + 1]._address)
+			if self._instructions[self._curr_index].operator in jmp_options:
+				basic_blocks_beginnings.add(self._instructions[self._curr_index + 1]._address)
+				basic_blocks_beginnings.add(int(self._instructions[self._curr_index].operands[0], 16))
+				basic_blocks_endings.add(self._instructions[self._curr_index]._address)
 			
 			
 			self._curr_index += 1
 		
-		basic_blocks_endings.add(self._instructions[self._curr_index]._address)
+		basic_blocks_endings.add(self._instructions[self._curr_index - 1]._address)
 		basic_blocks_instructions.append(basic_block_curr)
-
+		
 		basic_blocks_beginnings = sorted(basic_blocks_beginnings, key=int)
 		basic_blocks_endings = sorted(basic_blocks_endings, key=int)
 		basic_blocks_instructions = sorted(basic_blocks_instructions, key = lambda x : x[0])
@@ -257,6 +260,45 @@ class AsmFunction(object):
 		for basic_block in self._basic_blocks:
 			basic_block.decompile_block()
 	
+	def connect_basic_blocks(self):
+		to_connect = []
+		conditional_jmp_options = {'jne':'!=', 'je':'==', 'jbe':'<=', 'jle':'<=', 'jae':'>=', 'jge':'>=', 'jnz':'!=0', 'jns':None, 'jz':'==0', 'js':None, 'jnbe':'>', 'ja':'>', 'jg':'>', 'jb':'<', 'jl':'<', 'jnge':'<', 'jnle':'>', 'jnl':'>='}
+		
+		for block in self._basic_blocks:
+			block_map = None
+			operator = block.asm_instructions[-1].operator
+			
+			if operator in conditional_jmp_options:
+				target_address = block.asm_instructions[-1].operands[0]
+				block_map = (block, { True : self.find_block_by_address(target_address), False : self.find_block_by_index(block.asm_instructions[-1].index + 1) })
+
+			elif operator == 'jmp': # direct jump
+				target_address = block.asm_instructions[-1].operands[0]
+				block_map = (block, self.find_block_by_address(target_address))
+			
+			else:
+				block_map = (block, self.find_block_by_index(block.asm_instructions[-1].index + 1))
+
+			to_connect.append(block_map)
+		
+		
+		
+		# ----> Implement with recursion <-----
+
+		#curr_block_map = to_connect[0]
+		
+		#while True:	
+		#	print ''.join(curr_block_map[0].c_code)
+		#	if type(curr_block_map[1]) is dict:
+		#		cmp_condition = curr_block_map[0].asm_instructions[-2]
+		#		lval = self.get_value(cmp_condition.operands[0])
+		#		rval = self.get_value(cmp_condition.operands[1])
+		#		compare_operator = conditional_jmp_options[curr_block_map[0].asm_instructions[-1].operator]
+		#		print 'if({} {} {}) {{'.format(lval, compare_operator, rval)
+
+		#	elif type(curr_block_map[1]) is 
+			
+
 	def calculate_return_value(self):
 		'''
 			Using the already-known return type, we calculate the return value!
@@ -503,9 +545,10 @@ class AsmFunction(object):
 
 		:return: None
 		"""
-		last_init_index = 0
-		for inst in self._instructions:
-			if inst.does_read_from_stack() and not inst.does_read_args_from_stack():  # reads from local variables
+		last_init_index = 2  
+		for inst in self._instructions[2:]:
+			#if inst.does_read_from_stack() and not (inst.does_read_args_from_stack() or inst.reg_to_reg() :  # reads from local variables
+			if not (inst.is_mov_reg_to_reg() or inst.is_mov_reg_to_stack()) and inst.is_relevant():
 				last_init_index -= 1
 				break
 
@@ -527,11 +570,11 @@ class AsmFunction(object):
 
 			self.set_type(stack_element, element_type)
 
-		self._curr_index = last_init_index
+		self._curr_index = last_init_index + 1
 
 
 class AsmInstruction(object):
-	def __init__(self, line):
+	def __init__(self, line, index):
 		"""
 		Initiate the assembly instruction line address, command and comment address.
 
@@ -540,6 +583,7 @@ class AsmInstruction(object):
 		:param line: The command line according to pwnlib.disasm output format
 		:type line: str
 		"""
+		self.index = index
 		command_pattern = ' *([0-9a-f]+): *(?:[0-9a-f]{2} ){1,7} *([^ ]+)( *(?:[^,]+(?:,[^,]+)?)?)( *(?:# 0x.+)?)'
 		if not re.match(command_pattern, line):
 			raise InvalidInstructionLineException(line, 'Invalid instruction pattern')
@@ -563,7 +607,7 @@ class AsmInstruction(object):
 		:return: True if the instruction reads from the stack
 		:rtype: bool
 		"""
-		return len(self.operands) == 2 and '[' in self.operands[1] and ']' in self.operands[1]
+		return len(self.operands) == 2 and '[rbp' in self.operands[1] and ']' in self.operands[1]
 
 	def does_read_args_from_stack(self):
 		"""
@@ -572,6 +616,22 @@ class AsmInstruction(object):
 		:rtype: bool
 		"""
 		return self.does_read_from_stack() and '[rbp+' in self.operands[1]
+	
+	def is_mov(self):
+		return self.operator.startswith('mov')
+
+	def is_mov_reg_to_reg(self):
+		return self.is_mov() and is_register(self.operands[0]) and is_register(self.operands[1])
+	
+	def is_mov_reg_to_stack(self):
+		return self.is_mov() and not(is_register(self.operands[0])) and is_register(self.operands[1])
+	
+	def is_relevant(self):
+		if len(self.operands) == 2:
+			return not(self.operands[0] == 'rsp' or self.operands[1] == 'rsp')
+		elif len(self.operands) == 1:
+			return not(self.operands[0] == 'rsp')
+		return True
 
 
 class InvalidInstructionLineException(Exception):
@@ -588,6 +648,6 @@ class InvalidInstructionLineException(Exception):
 
 if __name__ == '__main__':
 	TestFile = AsmElfFile("calling_convention_chk")
-	func = AsmFunction(TestFile, "int_four_chars")
+	func = AsmFunction(TestFile, "loop_test")
 	func.decompile()
 	print str(func)
