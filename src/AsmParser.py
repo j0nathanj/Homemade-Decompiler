@@ -5,19 +5,12 @@ import AsmInstructionParser
 from collections import namedtuple
 
 '''
-(27.10.2018) TODOs:
+(24.11.2018) TODOs:
 ----------------------------------------------------------------------------------
 
-* Adding names to local variables
+- Implement logical OR in loops/if conditions.
+- Implement function calls
 
-* To Implement:
-	- AsmFunction.find_block_by_index
-	- AsmFunction.find_block_by_address
-	- AsmFunction.create_c_code    	   (Recursive function to traverse all blocks)
-
-* Handle function calls from within AsmFunctions
-
-~ For later: "return" basic block
 ----------------------------------------------------------------------------------
 '''
 
@@ -29,6 +22,8 @@ def is_int(s):
 		return False
 
 StackEntry = namedtuple('StackEntry', ['value', 'type'])
+
+CONDITIONAL_JUMP_OPTIONS = {'jne':'!=', 'je':'==', 'jbe':'<=', 'jle':'<=', 'jae':'>=', 'jge':'>=', 'jnz':'!=', 'jns':None, 'jz':'==', 'js':None, 'jnbe':'>', 'ja':'>', 'jg':'>', 'jb':'<', 'jl':'<', 'jnge':'<', 'jnle':'>', 'jnl':'>='}
 
 
 class BasicBlock(object):
@@ -42,6 +37,8 @@ class BasicBlock(object):
 		self.asm_instructions = asm_instructions
 		self.c_code = []
 		self.asm_function = asm_function
+		self.block_map = None
+
 	
 	def decompile_block(self):
 		curr_index = 0
@@ -167,12 +164,13 @@ class AsmFunction(object):
 	def decompile(self):
 		self.init_parameters()
 		self.calculate_return_type()
+		self.calculate_return_value()
 		self.split_to_basic_blocks()
 		self.decompile_basic_blocks()
 		self.connect_basic_blocks()
-		self.calculate_return_value()
 		self.rename_local_variables() # change names of local variables
-
+		self._c_code = self.make_c_code(self._basic_blocks[0])
+		
 	def __str__(self):
 		result = 'Function name: %s\n' % self._name
 		result += 'Function address: %s\n' % hex(self._address)
@@ -184,8 +182,7 @@ class AsmFunction(object):
 		result += '\n' + '-' * 100 + '\n'
 		result += 'Pseudo C Code:\n'
 		
-		for basic_block in self._basic_blocks:
-			result += '\n'.join(basic_block.c_code)
+		result += self._c_code
 		
 		result += '\nreturn '+self._return_value+';\n'
 		print self._stack_frame_state
@@ -259,45 +256,171 @@ class AsmFunction(object):
 	def decompile_basic_blocks(self):
 		for basic_block in self._basic_blocks:
 			basic_block.decompile_block()
+
+	
+	def find_block_by_index(self, index):
+		for basic_block in self._basic_blocks:
+			if basic_block.asm_instructions[0].index == index:
+				return basic_block
+	
+	def find_block_by_address(self, address):
+		address = int(address, 16)
+		for basic_block in self._basic_blocks:
+			if basic_block.start_addr == address:
+				return basic_block
 	
 	def connect_basic_blocks(self):
-		to_connect = []
-		conditional_jmp_options = {'jne':'!=', 'je':'==', 'jbe':'<=', 'jle':'<=', 'jae':'>=', 'jge':'>=', 'jnz':'!=0', 'jns':None, 'jz':'==0', 'js':None, 'jnbe':'>', 'ja':'>', 'jg':'>', 'jb':'<', 'jl':'<', 'jnge':'<', 'jnle':'>', 'jnl':'>='}
-		
+				
+		#import pdb; pdb.set_trace()
 		for block in self._basic_blocks:
+			
 			block_map = None
 			operator = block.asm_instructions[-1].operator
 			
-			if operator in conditional_jmp_options:
+			if operator in CONDITIONAL_JUMP_OPTIONS:
 				target_address = block.asm_instructions[-1].operands[0]
-				block_map = (block, { True : self.find_block_by_address(target_address), False : self.find_block_by_index(block.asm_instructions[-1].index + 1) })
+				block_map = { True : self.find_block_by_address(target_address), False : self.find_block_by_index(block.asm_instructions[-1].index + 1) }
 
 			elif operator == 'jmp': # direct jump
 				target_address = block.asm_instructions[-1].operands[0]
-				block_map = (block, self.find_block_by_address(target_address))
+				block_map = self.find_block_by_address(target_address)
 			
 			else:
-				block_map = (block, self.find_block_by_index(block.asm_instructions[-1].index + 1))
+				block_map = self.find_block_by_index(block.asm_instructions[-1].index + 1)
 
-			to_connect.append(block_map)
-		
-		
-		
-		# ----> Implement with recursion <-----
+			block.block_map = block_map
 
-		#curr_block_map = to_connect[0]
+	def make_c_code(self, start_block, stop_at = None):
 		
-		#while True:	
-		#	print ''.join(curr_block_map[0].c_code)
-		#	if type(curr_block_map[1]) is dict:
-		#		cmp_condition = curr_block_map[0].asm_instructions[-2]
-		#		lval = self.get_value(cmp_condition.operands[0])
-		#		rval = self.get_value(cmp_condition.operands[1])
-		#		compare_operator = conditional_jmp_options[curr_block_map[0].asm_instructions[-1].operator]
-		#		print 'if({} {} {}) {{'.format(lval, compare_operator, rval)
+		if (stop_at and start_block == stop_at) or start_block is None:
+			return ''
+		
+		c_code = '\n'.join(start_block.c_code)
+		block_type = self.get_block_type(start_block) # 'NORMAL' / 'IF' / 'LOOP' 
 
-		#	elif type(curr_block_map[1]) is 
+		if block_type == 'NORMAL':
+			c_code += self.make_c_code(start_block.block_map, stop_at = stop_at)
+		elif block_type == 'IF':
+			meeting_block, _ = self.get_meeting_block(start_block.block_map[True], start_block.block_map[False])
+			if meeting_block == start_block.block_map[True]:
+				c_code += self.get_if_statement(start_block, invert = True)
+				c_code += self.make_c_code(start_block.block_map[False], stop_at = meeting_block)
+				c_code += '\n}\n'
 			
+			elif meeting_block == start_block.block_map[False]:
+				c_code += self.get_if_statement(start_block, invert = False)
+				c_code += self.make_c_code(start_block.block_map[True], stop_at = meeting_block)
+				c_code += '\n}\n'
+
+			else:
+				c_code += self.get_if_statement(start_block, invert = False)
+				c_code += self.make_c_code(start_block.block_map[True], stop_at = meeting_block)
+				c_code += '\n}\n'
+				c_code += self.get_else_statement()
+				c_code += self.make_c_code(start_block.block_map[False], stop_at = meeting_block)
+				c_code += '\n}\n'
+			
+			c_code += self.make_c_code(meeting_block, stop_at = stop_at)
+
+		elif block_type == 'LOOP':
+			c_code += self.get_while_statement(start_block, invert = False)
+			c_code += self.make_c_code(start_block.block_map[True], stop_at = start_block)
+			c_code += '\n}\n'
+			c_code += self.make_c_code(start_block.block_map[False], stop_at = stop_at)
+
+		else:
+			raise Exception('[!] Invalid block type!')
+
+		return c_code
+
+
+	def get_block_type(self, block):
+		'''	
+			Figure out if this is a Normal Block / Loop Block / If block.
+
+		'''
+		last_instruction = block.asm_instructions[-1]
+
+		if last_instruction.operator not in CONDITIONAL_JUMP_OPTIONS:
+			return 'NORMAL'
+		
+		target_address = int(last_instruction.operands[0], 16)
+
+		if target_address > block.start_addr:
+			return 'IF'
+
+		return 'LOOP'
+
+
+	def get_meeting_block(self, block1, block2, exclude_list = None, distance = 0):
+		if block1 == block2:
+			return (block1, distance)
+	
+		if not exclude_list:
+			exclude_list = []
+		else:
+			exclude_list = exclude_list[:]
+
+		if block1 in exclude_list or block1 is None:
+			return None, distance
+
+		exclude_list.append(block1)
+		exclude_list.append(block2)
+		result_list = []
+
+		if type(block1.block_map) == dict:
+			result_list.append(self.get_meeting_block(block1.block_map[True], block2, exclude_list, distance+1))
+			
+			#if block1.block_map[False] not in exclude_list:
+			result_list.append(self.get_meeting_block(block1.block_map[False], block2, exclude_list, distance+1))
+
+
+		else:
+			#if block1.block_map not in exclude_list:
+			result_list.append(self.get_meeting_block(block1.block_map, block2, exclude_list, distance + 1))
+
+		if type(block2.block_map) == dict:
+			#if block2.block_map[True] not in exclude_list:
+			result_list.append(self.get_meeting_block(block2.block_map[True], block1, exclude_list, distance + 1))
+			
+			#if block2.block_map[False] not in exclude_list:
+			result_list.append(self.get_meeting_block(block2.block_map[False], block1, exclude_list, distance + 1))
+
+
+		else:
+			#if block2.block_map not in exclude_list:
+			result_list.append(self.get_meeting_block(block2.block_map, block1, exclude_list, distance + 1))
+
+
+		min_distance = None
+		closest_block = None
+
+		for block, dist in result_list:
+			if (min_distance is None or dist < min_distance) and block:
+				min_distance = dist
+				closest_block = block
+
+		return closest_block, min_distance
+	
+	def get_conditional_statement(self, block, invert = False):
+		operator = CONDITIONAL_JUMP_OPTIONS[block.asm_instructions[-1].operator]
+		cmp_condition = block.asm_instructions[-2]
+		lval = self.get_value(cmp_condition.operands[0])
+		rval = self.get_value(cmp_condition.operands[1])
+		sign = ''
+		if invert:
+			sign = '!'
+		return sign+'('+(' '.join([lval, operator, rval]))+')'
+
+
+	def get_if_statement(self, block, invert = False):
+		return '\nif ( {} )\n{{\n'.format(self.get_conditional_statement(block, invert))
+	
+	def get_while_statement(self, block, invert = False):
+		return '\nwhile ( {} )\n{{\n'.format(self.get_conditional_statement(block, invert))
+	
+	def get_else_statement(self):
+		return 'else\n{\n'
 
 	def calculate_return_value(self):
 		'''
@@ -342,7 +465,7 @@ class AsmFunction(object):
 			if len(inst.operands) > 1 and is_register(inst.operands[0]) and get_register(inst.operands[0]) == 'rax' and not xmm0_or_rax_found:
 				src = inst.operands[1]
 				return_type = self.get_english_size(
-					src if not is_register(src) else self._reg_state_dict[get_register(src)])
+					src if not is_register(src) else self.get_value(src))
 				self._return_type = return_type
 				xmm0_or_rax_found = True
 				return return_type
@@ -472,10 +595,10 @@ class AsmFunction(object):
 			else:
 				raise Exception('Invalid size in dst/src of an instruction, value: %s ' % value)
 
-	def make_c_code(self):
-		while self._curr_index < len(self._instructions) - 1:
-			self.update_state_dicts_by_inst(self._curr_index + 1, True)
-			self._curr_index += 1
+	#def make_c_code(self):
+	#	while self._curr_index < len(self._instructions) - 1:
+	#		self.update_state_dicts_by_inst(self._curr_index + 1, True)
+	#		self._curr_index += 1
 
 	def update_state_dicts_by_inst(self, ind, make_c_code=False):
 		"""
@@ -648,6 +771,6 @@ class InvalidInstructionLineException(Exception):
 
 if __name__ == '__main__':
 	TestFile = AsmElfFile("calling_convention_chk")
-	func = AsmFunction(TestFile, "loop_test")
+	func = AsmFunction(TestFile, "loop_if")
 	func.decompile()
 	print str(func)

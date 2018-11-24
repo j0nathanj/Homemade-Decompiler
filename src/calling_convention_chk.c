@@ -114,6 +114,25 @@ int loop_test(){
 	return i;
 }
 
+
+int loop_if(){
+	int i = 0;
+	for(i  = 0; i < 10; i++){
+		if( i == 5){
+			printf("LOL 5\n");
+		}
+		else{
+			printf("NOT 5 :(\n");
+		}
+		if(i == 3){
+			printf("hey 3\n");
+		}
+		printf("HELLO\n");
+	}
+	return i;
+}
+
+
 int double_loop(){
 	int i = 0;
 	int j = 0;
@@ -124,6 +143,22 @@ int double_loop(){
 	}
 	return i+j;
 }
+
+int complex_if(int a, int b){
+	if( a > 5 && b < 5)
+	{
+		a++;
+	}
+
+	if(a < 5 || b == 10){
+		a++;
+	}
+	
+	return a+b;
+}
+
+
+
 
 int main(int argc, char** argv){
 	int i = 1;
@@ -146,5 +181,6 @@ int main(int argc, char** argv){
 	shift_left(x, y); 
 	int result = loop_test();
 	int result2 = double_loop();
+	int result3 = complex_if(5, 6);
 	return 1;
 }
