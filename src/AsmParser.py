@@ -8,8 +8,8 @@ from collections import namedtuple
 (24.11.2018) TODOs:
 ----------------------------------------------------------------------------------
 
-- Implement logical OR in loops/if conditions.
-- Implement function calls
+- Implement function calls.
+- Prettify the variables / emitted C code.
 
 ----------------------------------------------------------------------------------
 '''
@@ -38,6 +38,8 @@ class BasicBlock(object):
 		self.c_code = []
 		self.asm_function = asm_function
 		self.block_map = None
+		self.reachers = set([])
+
 
 	
 	def decompile_block(self):
@@ -169,6 +171,7 @@ class AsmFunction(object):
 		self.decompile_basic_blocks()
 		self.connect_basic_blocks()
 		self.rename_local_variables() # change names of local variables
+		#import pdb; pdb.set_trace()
 		self._c_code = self.make_c_code(self._basic_blocks[0])
 		
 	def __str__(self):
@@ -279,14 +282,21 @@ class AsmFunction(object):
 			
 			if operator in CONDITIONAL_JUMP_OPTIONS:
 				target_address = block.asm_instructions[-1].operands[0]
-				block_map = { True : self.find_block_by_address(target_address), False : self.find_block_by_index(block.asm_instructions[-1].index + 1) }
+				target_true = self.find_block_by_address(target_address)
+				target_false = self.find_block_by_index(block.asm_instructions[-1].index + 1)
+				block_map = { True : target_true , False : target_false }
+				target_true.reachers.add(block)
+				target_false.reachers.add(block)
 
 			elif operator == 'jmp': # direct jump
 				target_address = block.asm_instructions[-1].operands[0]
 				block_map = self.find_block_by_address(target_address)
+				block_map.reachers.add(block)
 			
 			else:
 				block_map = self.find_block_by_index(block.asm_instructions[-1].index + 1)
+				if block_map:
+					block_map.reachers.add(block)
 
 			block.block_map = block_map
 
@@ -301,7 +311,7 @@ class AsmFunction(object):
 		if block_type == 'NORMAL':
 			c_code += self.make_c_code(start_block.block_map, stop_at = stop_at)
 		elif block_type == 'IF':
-			meeting_block, _ = self.get_meeting_block(start_block.block_map[True], start_block.block_map[False])
+			meeting_block, distance = self.get_meeting_block(start_block.block_map[True], start_block.block_map[False])
 			if meeting_block == start_block.block_map[True]:
 				c_code += self.get_if_statement(start_block, invert = True)
 				c_code += self.make_c_code(start_block.block_map[False], stop_at = meeting_block)
@@ -333,25 +343,6 @@ class AsmFunction(object):
 
 		return c_code
 
-
-	def get_block_type(self, block):
-		'''	
-			Figure out if this is a Normal Block / Loop Block / If block.
-
-		'''
-		last_instruction = block.asm_instructions[-1]
-
-		if last_instruction.operator not in CONDITIONAL_JUMP_OPTIONS:
-			return 'NORMAL'
-		
-		target_address = int(last_instruction.operands[0], 16)
-
-		if target_address > block.start_addr:
-			return 'IF'
-
-		return 'LOOP'
-
-
 	def get_meeting_block(self, block1, block2, exclude_list = None, distance = 0):
 		if block1 == block2:
 			return (block1, distance)
@@ -370,25 +361,18 @@ class AsmFunction(object):
 
 		if type(block1.block_map) == dict:
 			result_list.append(self.get_meeting_block(block1.block_map[True], block2, exclude_list, distance+1))
-			
-			#if block1.block_map[False] not in exclude_list:
 			result_list.append(self.get_meeting_block(block1.block_map[False], block2, exclude_list, distance+1))
 
 
 		else:
-			#if block1.block_map not in exclude_list:
 			result_list.append(self.get_meeting_block(block1.block_map, block2, exclude_list, distance + 1))
 
 		if type(block2.block_map) == dict:
-			#if block2.block_map[True] not in exclude_list:
 			result_list.append(self.get_meeting_block(block2.block_map[True], block1, exclude_list, distance + 1))
-			
-			#if block2.block_map[False] not in exclude_list:
 			result_list.append(self.get_meeting_block(block2.block_map[False], block1, exclude_list, distance + 1))
 
 
 		else:
-			#if block2.block_map not in exclude_list:
 			result_list.append(self.get_meeting_block(block2.block_map, block1, exclude_list, distance + 1))
 
 
@@ -396,11 +380,45 @@ class AsmFunction(object):
 		closest_block = None
 
 		for block, dist in result_list:
-			if (min_distance is None or dist < min_distance) and block:
+			is_not_or_shared_code = True
+			
+			if block:
+				reacher_cnt = self.get_if_reachers_count(block)
+				is_not_or_shared_code = ((reacher_cnt == 1 or reacher_cnt != len(list(block.reachers))))
+
+			if (min_distance is None or dist < min_distance) and block and is_not_or_shared_code:
 				min_distance = dist
 				closest_block = block
 
 		return closest_block, min_distance
+	
+	
+	def get_if_reachers_count(self, block):
+		count = 0
+		lst = list(block.reachers)
+		for index in xrange(len(lst)):
+			if self.get_block_type(lst[index]) == 'IF':
+				count += 1
+		return count
+
+	def get_block_type(self, block):
+		'''	
+			Figure out if this is a Normal Block / Loop Block / If block.
+
+		'''
+		last_instruction = block.asm_instructions[-1]
+
+		if last_instruction.operator not in CONDITIONAL_JUMP_OPTIONS:
+			return 'NORMAL'
+		
+		target_address = int(last_instruction.operands[0], 16)
+
+		if target_address > block.start_addr:
+			return 'IF'
+
+		return 'LOOP'
+
+	
 	
 	def get_conditional_statement(self, block, invert = False):
 		operator = CONDITIONAL_JUMP_OPTIONS[block.asm_instructions[-1].operator]
@@ -595,11 +613,6 @@ class AsmFunction(object):
 			else:
 				raise Exception('Invalid size in dst/src of an instruction, value: %s ' % value)
 
-	#def make_c_code(self):
-	#	while self._curr_index < len(self._instructions) - 1:
-	#		self.update_state_dicts_by_inst(self._curr_index + 1, True)
-	#		self._curr_index += 1
-
 	def update_state_dicts_by_inst(self, ind, make_c_code=False):
 		"""
 		Process the instruction and update the state dicts according to it.
@@ -771,6 +784,6 @@ class InvalidInstructionLineException(Exception):
 
 if __name__ == '__main__':
 	TestFile = AsmElfFile("calling_convention_chk")
-	func = AsmFunction(TestFile, "loop_if")
+	func = AsmFunction(TestFile, "complex_if")
 	func.decompile()
 	print str(func)
