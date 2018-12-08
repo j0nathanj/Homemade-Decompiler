@@ -1,6 +1,6 @@
-def is_int(s):
+def is_int(s, base=10):
     try:
-        int(s)
+        int(s, base)
         return True
-    except ValueError:
+    except Exception:
         return False

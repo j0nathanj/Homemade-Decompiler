@@ -1,4 +1,4 @@
-from src.Errors import BaseDecompilerError
+from Errors import BaseDecompilerError
 
 REGISTERS_SECTION_NAME = "REGISTERS"
 
@@ -29,11 +29,7 @@ class RegistersManager(object):
         self._config_parser = config_parser
 
         self._all_registers = {}
-        self.registers_128 = []
-        self.registers_64 = []
-        self.registers_32 = []
-        self.registers_16 = []
-        self.registers_8 = []
+        self._get_registers_from_config()
 
     def _get_registers_from_config(self):
         for reg_name, value in self._config_parser.items(REGISTERS_SECTION_NAME):
@@ -84,7 +80,7 @@ class RegistersManager(object):
         """
         registers = []
 
-        for _, reg in self._all_registers:
+        for _, reg in self._all_registers.items():
             if reg.family == family:
                 registers.append(reg)
 
