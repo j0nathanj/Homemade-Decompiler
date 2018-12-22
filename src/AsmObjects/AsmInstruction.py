@@ -12,7 +12,7 @@ class AsmInstruction(object):
 		:type line: str
 		"""
 		self.index = index
-		command_pattern = ' *([0-9a-f]+): *(?:[0-9a-f]{2} ){1,7} *([^ ]+)( *(?:[^,]+(?:,[^,]+)?)?)( *(?:# 0x.+)?)'
+		command_pattern = ' *([0-9a-f]+): *(?:[0-9a-f]{2} ){1,7} *([^ ]+)( *(?:[^,]+(?:,[^,#]+)?)?)( *(?:# 0x.+)?)'
 		if not re.match(command_pattern, line):
 			raise InvalidInstructionLineException(line, 'Invalid instruction pattern')
 

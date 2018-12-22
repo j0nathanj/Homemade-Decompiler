@@ -6,11 +6,9 @@ from AsmObjects.AsmFunction import AsmFunction
 
 CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), "config.ini")
 '''
-	TODO list: (8/12/2018)
-
-		1) Handle rodata access (relative to rip)
-		2) Rename variables - Done not tested
-		3) Prettify the code
+	TODO list: (22/12/2018)
+		1) Handle pointers access
+		2) Prettify the code
 
 '''
 

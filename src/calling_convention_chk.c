@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+unsigned int global1 = 0xdeadbeef;
+char * ptr = NULL;
+
 float int_float(int a, float b){
 float c =b;
 int d = a;
@@ -182,5 +185,9 @@ int main(int argc, char** argv){
 	int result = loop_test();
 	int result2 = double_loop();
 	int result3 = complex_if(5, 6);
-	return 1;
+	global1 = 0xbad123;
+	ptr = malloc(0x40);
+	memset(ptr, 0xaa, 0);
+	*(ptr) = 'A';
+return 1;
 }

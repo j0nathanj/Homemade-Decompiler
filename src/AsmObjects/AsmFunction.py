@@ -11,7 +11,7 @@ StackEntry = namedtuple('StackEntry', ['value', 'type'])
 JUMPS_INSTRUCTION_OPTION_PATH = ("GENERAL", "jump")
 CONDITIONAL_JUMPS_SECTION_NAME = "CONDITIONAL_JUMPS"
 VARIABLE_FORMAT_OPTION_PATH = ("GENERAL", "variable_format")
-
+PC_REG_OPTION_PATH = ("GENERAL", "pc_reg")
 
 class AsmFunction(object):
 
@@ -34,6 +34,7 @@ class AsmFunction(object):
 		self._instructions = self.func_content_to_instruction_arr(self._content)
 		self._reg_state_dict = {}
 		self._stack_frame_state = {}
+		self._global_state_dict = {}
 		self._parameters = []
 		self._c_code = ""
 		self._basic_blocks = []
@@ -320,8 +321,8 @@ class AsmFunction(object):
 	def get_conditional_statement(self, block, invert=False):
 		operator = self._conditional_jumps[block.asm_instructions[-1].operator]
 		cmp_condition = block.asm_instructions[-2]
-		lval = self.get_value(cmp_condition.operands[0])
-		rval = self.get_value(cmp_condition.operands[1])
+		lval = self.get_value(cmp_condition.operands[0], cmp_condition)
+		rval = self.get_value(cmp_condition.operands[1], cmp_condition)
 		sign = ''
 		if invert:
 			sign = '!'
@@ -346,9 +347,9 @@ class AsmFunction(object):
 
 		mapping = {'DWORD': 'eax', 'QWORD': 'rax', 'WORD': 'ax', 'BYTE': 'al'}
 		if self._return_type in ['float', 'double']:  # Accessing xmm0 to get return value
-			return_value = self.get_value('xmm0')
+			return_value = self.get_value('xmm0', None)
 		else:
-			return_value = self.get_value(mapping[self._return_type])
+			return_value = self.get_value(mapping[self._return_type], None)
 
 		self._return_value = return_value
 		return return_value
@@ -382,7 +383,7 @@ class AsmFunction(object):
 					not xmm0_or_rax_found:
 				src = inst.operands[1]
 				return_type = self.get_english_size(
-					src if not self._registers_manager.is_register(src) else self.get_value(src))
+					src if not self._registers_manager.is_register(src) else self.get_value(src, inst))
 				self._return_type = return_type
 				return return_type
 
@@ -412,7 +413,7 @@ class AsmFunction(object):
 		else:
 			raise Exception('Invalid precision: Does not imply Float/Double: %s' % precision)
 
-	def get_value(self, var):
+	def get_value(self, var, instruction):
 		"""
 		Get the value of the variable.
 		:param var: The variable name (can be a stack address, register name or a number).
@@ -433,11 +434,17 @@ class AsmFunction(object):
 			else:
 				return var
 
+		elif self.is_global_var(var):
+			target_addr = instruction._comment_address
+			target_prefix = self.get_english_size(var).lower()
+			target = target_prefix + '_' +hex(target_addr)[2:]
+			return target
+
 		else:
 			# The variable is a stack address
 			return self._stack_frame_state[var].value if var in self._stack_frame_state else var
 
-	def set_value(self, var, value):
+	def set_value(self, var, value, instruction):
 		if self._registers_manager.is_register(var):
 			register = self._registers_manager.get_register(var)
 			self._reg_state_dict[register.name] = value
@@ -447,11 +454,21 @@ class AsmFunction(object):
 			for cur_reg in register_faily:
 				if register.size > int(cur_reg.size) and cur_reg.name in self._reg_state_dict:
 					del self._reg_state_dict[cur_reg.name]
+		
+		elif self.is_global_var(var):
+			target_addr = instruction._comment_address
+			target_prefix = self.get_english_size(var).lower()
+			target = target_prefix + '_'+hex(target_addr)[2:]
+			self._global_state_dict[target] = value
+		
 		else:
 			if var in self._stack_frame_state:
 				self._stack_frame_state[var] = self._stack_frame_state[var]._replace(value=value)
 			else:
 				self._stack_frame_state[var] = StackEntry(value=value, type=None)
+	
+	def is_global_var(self, var):
+		return self._config_parser.get(*PC_REG_OPTION_PATH) in var
 
 	def get_english_size(self, value):
 		"""
@@ -549,12 +566,12 @@ class AsmFunction(object):
 		dst = self.asm_instruction_parser.handle_instruction(inst)
 
 		if dst is not None and not self._registers_manager.is_register(dst) and make_c_code:
-			self.write_c_inst(dst)
+			self.write_c_inst(dst, inst)
 
-	def write_c_inst(self, mem_var):
-		c_inst = mem_var + ' = ' + self.get_value(mem_var) + ';'
+	def write_c_inst(self, mem_var, inst):
+		c_inst = mem_var + ' = ' + self.get_value(mem_var, inst) + ';'
 		self._c_code.append(c_inst)
-		self.set_value(mem_var, mem_var)
+		self.set_value(mem_var, mem_var, inst)
 
 	def sorted_stack_frame(self):
 		"""
@@ -616,11 +633,11 @@ class AsmFunction(object):
 			# stack_element is in the stack frame && looks like: `DWORD PTR [rbp-0x24]`.
 			# value is the value stored in that stack frame location
 			element_type = self.get_type(stack_element)
-			param_reg = self.get_value(stack_element)
+			param_reg = self.get_value(stack_element, None)
 
 			param_name = "param{}".format(param_idx)
 			self._parameters.append((param_name, element_type, param_reg))
-			self.set_value(stack_element, param_name)
+			self.set_value(stack_element, param_name, None)
 
 			self.set_type(stack_element, element_type)
 
