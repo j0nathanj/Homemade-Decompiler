@@ -10,9 +10,11 @@ StackEntry = namedtuple('StackEntry', ['value', 'type'])
 
 JUMPS_INSTRUCTION_OPTION_PATH = ("GENERAL", "jump")
 CONDITIONAL_JUMPS_SECTION_NAME = "CONDITIONAL_JUMPS"
+VARIABLE_FORMAT_OPTION_PATH = ("GENERAL", "variable_format")
 
 
 class AsmFunction(object):
+
 	def __init__(self, src_file, function_name, config_parser):
 		"""
 		Initiate the assembly function file, name, address, size and instructions.
@@ -33,7 +35,7 @@ class AsmFunction(object):
 		self._reg_state_dict = {}
 		self._stack_frame_state = {}
 		self._parameters = []
-		self._c_code = []
+		self._c_code = ""
 		self._basic_blocks = []
 		self._curr_index = 0
 		self._return_type = ''
@@ -58,8 +60,8 @@ class AsmFunction(object):
 		self.split_to_basic_blocks()
 		self.decompile_basic_blocks()
 		self.connect_basic_blocks()
-		self.rename_local_variables()
 		self._c_code = self.make_c_code(self._basic_blocks[0])
+		self.rename_local_variables()
 
 	def __str__(self):
 		result = 'Function name: %s\n' % self._name
@@ -103,9 +105,12 @@ class AsmFunction(object):
 
 	def rename_local_variables(self):
 		"""
-			Rename local variables (from "DWORD ptr ..." to something more human-readable.
+		Rename local variables (from "DWORD ptr ..." to something more human-readable).
+		The _c_code attribute should contain the C code.
 		"""
-		pass
+		variable_format = self._config_parser.get(*VARIABLE_FORMAT_OPTION_PATH)
+		for idx, stack_var in enumerate(self._stack_frame_state):
+			self._c_code = self._c_code.replace(stack_var, variable_format.format(idx))
 
 	def split_to_basic_blocks(self):
 		basic_blocks_beginnings = {self._instructions[self._curr_index].address}  # start addresses of the basic blocks
@@ -188,6 +193,15 @@ class AsmFunction(object):
 			block.block_map = block_map
 
 	def make_c_code(self, start_block, stop_at=None):
+		"""
+		Get the C code of the function.
+		:param start_block: The basic block to start with.
+		:type start_block: BasicBlock
+		:param stop_at: The basic block to stop at.
+		:type stop_at: BasicBlock
+		:return: The C code from the start_block to the stop_at block (or end of function is stop_at is None).
+		:rtype: str
+		"""
 
 		if (stop_at and start_block == stop_at) or start_block is None:
 			return ''
