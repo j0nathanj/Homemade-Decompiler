@@ -18,7 +18,7 @@ def main():
 	config_parser.read(CONFIG_FILE_PATH)
 
 	test_file = AsmElfFile("calling_convention_chk")
-	func = AsmFunction(test_file, "main", config_parser)
+	func = AsmFunction(test_file, "complex_if", config_parser)
 	func.decompile()
 	print str(func)
 

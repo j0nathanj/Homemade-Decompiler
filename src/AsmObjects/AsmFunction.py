@@ -193,7 +193,7 @@ class AsmFunction(object):
 
 			block.block_map = block_map
 
-	def make_c_code(self, start_block, stop_at=None):
+	def make_c_code(self, start_block, stop_at=None, indent_level = 0):
 		"""
 		Get the C code of the function.
 		:param start_block: The basic block to start with.
@@ -206,39 +206,44 @@ class AsmFunction(object):
 
 		if (stop_at and start_block == stop_at) or start_block is None:
 			return ''
-
-		c_code = '\n'.join(start_block.c_code)
+		
+		c_code = [' '*(4*indent_level) + c_line for c_line in start_block.c_code]
+		
+		#c_code = '\n'.join(start_block.c_code)
+		c_code  = '\n'.join(c_code)
 		block_type = self.get_block_type(start_block)  # 'NORMAL' / 'IF' / 'LOOP'
 
 		if block_type == 'NORMAL':
-			c_code += self.make_c_code(start_block.block_map, stop_at=stop_at)
+			c_code += self.make_c_code(start_block.block_map, stop_at=stop_at, indent_level = indent_level)
 		elif block_type == 'IF':
 			meeting_block, distance = self.get_meeting_block(start_block.block_map[True], start_block.block_map[False])
 			if meeting_block == start_block.block_map[True]:
-				c_code += self.get_if_statement(start_block, invert=True)
-				c_code += self.make_c_code(start_block.block_map[False], stop_at=meeting_block)
-				c_code += '\n}\n'
+				c_code += self.get_if_statement(start_block, invert=True, indent_level = indent_level)
+				c_code += self.make_c_code(start_block.block_map[False], stop_at=meeting_block, indent_level = indent_level + 1)
+				c_code += '\n' + indent_level * 4 * ' ' + '}\n'
+
 
 			elif meeting_block == start_block.block_map[False]:
-				c_code += self.get_if_statement(start_block, invert=False)
-				c_code += self.make_c_code(start_block.block_map[True], stop_at=meeting_block)
-				c_code += '\n}\n'
+				c_code += self.get_if_statement(start_block, invert=False, indent_level = indent_level )
+				c_code += self.make_c_code(start_block.block_map[True], stop_at=meeting_block, indent_level = indent_level + 1)
+				c_code += '\n' + indent_level * 4 * ' ' + '}\n'
 
 			else:
-				c_code += self.get_if_statement(start_block, invert=False)
-				c_code += self.make_c_code(start_block.block_map[True], stop_at=meeting_block)
-				c_code += '\n}\n'
-				c_code += self.get_else_statement()
-				c_code += self.make_c_code(start_block.block_map[False], stop_at=meeting_block)
-				c_code += '\n}\n'
+				c_code += self.get_if_statement(start_block, invert=False, indent_level = indent_level)
+				c_code += self.make_c_code(start_block.block_map[True], stop_at=meeting_block, indent_level = indent_level + 1)
+				c_code += '\n' + indent_level * 4 * ' ' + '}\n'
+				c_code += self.get_else_statement(indent_level = indent_level)
+				c_code += self.make_c_code(start_block.block_map[False], stop_at=meeting_block, indent_level = indent_level + 1)
+				c_code += '\n' + indent_level * 4 * ' ' + '}\n'
 
-			c_code += self.make_c_code(meeting_block, stop_at=stop_at)
+
+			c_code += self.make_c_code(meeting_block, stop_at=stop_at, indent_level = indent_level)
 
 		elif block_type == 'LOOP':
-			c_code += self.get_while_statement(start_block, invert=False)
-			c_code += self.make_c_code(start_block.block_map[True], stop_at=start_block)
-			c_code += '\n}\n'
-			c_code += self.make_c_code(start_block.block_map[False], stop_at=stop_at)
+			c_code += self.get_while_statement(start_block, invert=False, indent_level = indent_level)
+			c_code += self.make_c_code(start_block.block_map[True], stop_at=start_block, indent_level = indent_level + 1)
+			c_code += '\n' + indent_level * 4 * ' ' + '}\n'
+			c_code += self.make_c_code(start_block.block_map[False], stop_at=stop_at, indent_level = indent_level)
 
 		else:
 			raise Exception('[!] Invalid block type!')
@@ -328,15 +333,15 @@ class AsmFunction(object):
 			sign = '!'
 		return sign + '(' + (' '.join([lval, operator, rval])) + ')'
 
-	def get_if_statement(self, block, invert=False):
-		return '\nif ( {} )\n{{\n'.format(self.get_conditional_statement(block, invert))
+	def get_if_statement(self, block, invert=False, indent_level = 0):
+		return '\n'+ ' ' * 4 * indent_level + 'if ( {} )\n'.format(self.get_conditional_statement(block, invert)) + ' ' * 4 * indent_level+'{\n'
 
-	def get_while_statement(self, block, invert=False):
-		return '\nwhile ( {} )\n{{\n'.format(self.get_conditional_statement(block, invert))
+	def get_while_statement(self, block, invert=False, indent_level = 0):
+		return '\n'+  ' ' * 4 * indent_level + 'while ( {} )\n'.format(self.get_conditional_statement(block, invert)) + ' ' * 4 * indent_level + '{\n'
 
 	@staticmethod
-	def get_else_statement():
-		return 'else\n{\n'
+	def get_else_statement(indent_level = 0):
+		return ' ' * 4 * indent_level + 'else\n' + ' ' * 4 * indent_level + '{\n'
 
 	def calculate_return_value(self):
 		"""
@@ -629,12 +634,13 @@ class AsmFunction(object):
 
 		param_idx = 0
 		for stack_element in self.sorted_stack_frame():
+			#import pdb; pdb.set_trace()
 			param_idx += 1
 			# stack_element is in the stack frame && looks like: `DWORD PTR [rbp-0x24]`.
 			# value is the value stored in that stack frame location
 			element_type = self.get_type(stack_element)
 			param_reg = self.get_value(stack_element, None)
-
+			
 			param_name = "param{}".format(param_idx)
 			self._parameters.append((param_name, element_type, param_reg))
 			self.set_value(stack_element, param_name, None)
