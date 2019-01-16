@@ -15,7 +15,7 @@ yet we're pretty happy with what we made :)
 
 # Usage
 
-`python2.7 ./src/decompiler.py [-h] [--output OUTPUT] input_file input_function`
+`python2.7 ./src/decompiler.py [-h] [--output OUTPUT_FILE] input_file input_function`
 
 # TODOs
 
