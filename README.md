@@ -5,7 +5,7 @@
 We wrote a decompiler in Python as our final project for our degree, and this is the result!
 
 This is not perfect, there is still a **long** way until this becomes anywhere near HexRays' decompiler level ...
-but we're still pretty happy with what we made :)
+yet we're pretty happy with what we made :)
 
 # Requirements
 
