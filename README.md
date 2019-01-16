@@ -1,6 +1,6 @@
 # Homemade-Decompiler
 
-Authors: Jonathan Jacobi && Shahaf Cohen Tarica.
+*Authors: Jonathan Jacobi && Shahaf Cohen Tarica*
 
 We wrote a decompiler in Python as our final project for our degree, and this is the result!
 
