@@ -41,6 +41,7 @@ class AsmFunction(object):
 		self._curr_index = 0
 		self._return_type = ''
 		self._return_value = ''
+		self.signature = ''
 		self.asm_instruction_parser = AsmInstructionParser(self, self._registers_manager)
 		self._init_jumps()
 
@@ -63,6 +64,12 @@ class AsmFunction(object):
 		self.connect_basic_blocks()
 		self._c_code = self.make_c_code(self._basic_blocks[0])
 		self.rename_local_variables()
+		self.generate_signature()
+	
+	def generate_signature(self):
+		parameters = [_type + ' ' + _name for _name, _type, _reg in self._parameters]
+		self.signature = self._return_type + ' ' + self._name + '(' +', '.join(parameters) +')'
+				 
 
 	def __str__(self):
 		result = 'Function name: %s\n' % self._name
@@ -74,12 +81,11 @@ class AsmFunction(object):
 		result += 'Content:\n%s' % self._content
 		result += '\n' + '-' * 100 + '\n'
 		result += 'Pseudo C Code:\n'
-
+		result += self.signature + '\n{\n'
 		result += self._c_code
 
-		result += '\nreturn ' + self._return_value + ';\n'
-		print self._stack_frame_state
-		print self._reg_state_dict
+		result += '\n'+' ' * 4+'return ' + self._return_value + ';\n'
+		result += '}'
 		return result
 
 	def func_content_to_instruction_arr(self, func_content):
@@ -193,7 +199,7 @@ class AsmFunction(object):
 
 			block.block_map = block_map
 
-	def make_c_code(self, start_block, stop_at=None, indent_level = 0):
+	def make_c_code(self, start_block, stop_at=None, indent_level = 1):
 		"""
 		Get the C code of the function.
 		:param start_block: The basic block to start with.

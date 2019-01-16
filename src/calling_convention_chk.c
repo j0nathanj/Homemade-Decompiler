@@ -88,10 +88,6 @@ double double_double(double a, double b){
 return a*b + 7;
 }
 
-void* return_a_ptr(int x){
-	void* result = malloc(x);
-	return result;
-}
 
 char* return_buffer(char* inp){
 	char buf[500];
@@ -178,7 +174,6 @@ int main(int argc, char** argv){
 	two_chars(c1,c2);
 	four_chars_int(c1,c2,c3,c4,i);
 	int_four_chars(i,c1,c2,c3,one_char(c4));
-	return_a_ptr(x);
 	char* check = return_buffer("hello");
 	printf("%s\n", check);
 	shift_left(x, y); 
