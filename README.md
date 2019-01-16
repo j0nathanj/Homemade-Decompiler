@@ -14,11 +14,12 @@ This is not perfect, we still have a ton to add ... don't expect it to be as goo
 
 # Usage
 
-`python2.7 <path_to_project>/src/decompiler.py <input_file> <target_function_name> [-o <output_file>]`
+`python2.7 ./src/decompiler.py [-h] [--output OUTPUT] input_file input_function`
 
 # TODOs
 
 * Add better support for functions with return value.
 * Add support for pointers / dereferences.
 * Add variable declerations for local variables.
+* More... :)
  
